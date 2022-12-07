@@ -4,6 +4,7 @@ Academic project. Part of the Msc in Statistics and Operational Research at UPC-
 
 The data extracted from public databases
 
-Project acccomplish through the collaboration of @BernatChiva and @Fpratss
+Project acccomplished through the collaboration of @BernatChiva and @Fpratss
 
 ## Summary
+
