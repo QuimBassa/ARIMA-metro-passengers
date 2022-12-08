@@ -2,9 +2,9 @@
 
 Academic project. Part of the Msc in Statistics and Operational Research at UPC-UB.
 
-The data extracted from public databases
+The data extracted from public databases.
 
-Project acccomplished through the collaboration of @BernatChiva and @Fpratss
+Project acccomplished through the collaboration of @BernatChiva and @Fpratss.
 
 ## Summary
 The aim of the project is to analyze the monthly evolution of the total number of passengers of the Barcelona metro during the last 20 years.
