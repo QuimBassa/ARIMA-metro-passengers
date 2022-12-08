@@ -1,0 +1,548 @@
+---
+title: "Time Series Final Project"
+author: "Quim Bassa, Bernat Chiva & Ferran Ibañez"
+date: "28/4/2021"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 2
+    fig_caption: yes
+    highlight: pygments
+    keep_tex: yes
+    number_sections: yes
+  html_document:
+    df_print: paged
+abstract: The aim of this project is to analyze the monthly evolution of the total
+  number of passengers of the Barcelona metro. In particular, we will identify, estimate
+  and validate several models in order to choose the one that suits better to forecast
+  the monthly number of passengers. Specifically, we will se that applying an ARIMA(3,0,0)(0,0,2)
+  to a seasonally differentiated searies we obtain solid and reliable forecasts.
+subtitle: 'Analysis of the monthly users of the Barcelona metro  '
+header-includes:
+- \usepackage{float}
+- \usepackage{longtable}
+- \usepackage{dcolumn}
+
+---
+\centering
+
+\raggedright
+
+\clearpage
+
+
+\newpage
+
+\section{Introduction}
+
+This project aims to study the evolution of the number of passengers of Barcelona Metro during the last 20 years. Applying the Box-Jenkins ARIMA methodology to the data given, we expect to reveal the time series analysis and make predictions. First, we will make a quick exploratory data analysis checking the different properties of Time Series. Second, we will propose and fit several models for which we would choose the best one to make predictions and last but not least, we will check the presence of calendar effects and outliers in the series. 
+
+\section{Dataset and Exploratory Data Analysis}
+Our study is based in the series of monthly number of passengers of Barcelona Metro during the last 20 years which can be found in the Instituto Nacional de Estadística webpage:  http://www.ine.es/jaxiT3/Tabla.htm?t=20193.
+
+```{r, include=FALSE}
+# Data importation
+setwd("")
+(serie=ts(read.table("metro.dat"),start=1996,freq=12))
+```
+
+```{r, echo=FALSE}
+#Plot the time series
+plot(serie,ylab="Thousands of passangers", main="Metro-Users")
+abline(v=1996:2020,lty=3,col=4)
+```
+We can see that since the beginning of this series the monthly number of passengers has been increasing since 2020. This may be traduced in no constant mean. Moreover, we can also appreciate a seasonality pattern. There is an oscillation around the trend, the values vary periodically over the months which makes sense according to the reality. We know, for instance, that during summer the number of Metro passengers always drops.
+
+\subsection{Stationarity}
+
+Below we perform a test to check if the series is stationary and if not we would perform the transformations needed. The series is needed to be stationary so as to obtain consistent parameter estimates. This is a crucial property that must hold in order to obtain significant conclusion. 
+
+\subsubsection{Variance Diagnose}
+
+Constant variance is the first property that must hold in order to have stationarity. The verification of this property is based on the Box-plot and the Mean-variance plots. 
+
+```{r, include=FALSE}
+# Mean-Variance plot
+m=apply(matrix(serie,ncol=24),2,mean)
+v=apply(matrix(serie,ncol=24),2,var)
+d12serie=diff(serie,12)
+```
+
+```{r, echo=FALSE, fig.cap="Variance-Diagnose"}
+par(mfrow=c(1,2))
+plot(v~m,main="Mean-Variance plot", ylab="Varianza anaual", xlab="Media anual")
+boxplot(serie~floor(time(serie)),xlab = "Years", main="Box-Plot", ylab = "Thousands of Passangers")
+```
+In our case, the plots reveal that there is constant variance. We do not see an increase of variance for high values of the mean, and the length of the boxes remain more or less constant through the different levels.
+
+\subsubsection{Seasonality}
+
+The verification of seasonality is based in the monthplot. 
+```{r,echo=FALSE, fig.align='center', fig.height=6, fig.width=6}
+par(mfrow=c(2,1))
+monthplot(serie, ylab="Thousands of Passangers", main="Monthly Series")
+plot(d12serie, ylab ="d12serie", main="Differentiated series")
+abline(h=0)
+```
+In the beggining of this section we mentioned that there was a clear seasonality patter present in the series. Now, the Mont-Plots reveals that every year during August the number of passangers drops considerably. Therefore, it would be interesting to take into account a seasonality of order 12. 
+
+
+
+\subsubsection{Constant Mean}
+Now we will check whether the mean of the series is constant. Since it is not straight forward to deduce if the mean is constant or not from the plot of the seasonal differentiated series, we will validate it using the ACF.
+
+```{r, echo=FALSE }
+acf(d12serie,ylim=c(-1,1),lag.max=60,col=c(2,rep(1,11)), main="Autocorrelogram")
+```
+The ACF suggests that the series is already stationary since the ACF decays fast towards zero. Therefore the dependence structure will only depend on the lags and not on the time origin. Moreover, if we take the variance of the different series we can see that the series is already stationary with the seasonal differentiated series since an extra regular difference makes the variance increase. Then can conclude then, that the seasonal differentiated series of the number of Metro passengers is stationary with  constant mean equal to `r round(mean(d12serie),2)`.
+
+\begin{table}[]
+\centering
+\begin{tabular}{|l|l|l|l|}
+\hline
+Variance & serie & d12serie & d1d12serie \\ \hline
+Value    &   `r round(var(serie),3) `    &    `r round(var(d12serie),3) `      &    `r round(var(diff(d12serie)),3)`            \\ \hline
+\end{tabular}
+\caption{Series variance}
+\label{undefined}
+\end{table}
+
+```{r, echo=FALSE}
+#Plot the stationary time serie
+plot(d12serie, ylab ="Wt", main="Stationary series with constant mean")
+abline(h=0)
+abline(h=mean(d12serie),col=2)
+```
+
+\subsection{Model Identification}
+In this section we will analyze the ACF and PACF of the stationary series to identify several plausible models.
+```{r, echo=FALSE}
+par(mfrow=c(1,2))
+acf(d12serie,ylim=c(-1,1),col=c(2,rep(1,11)),lwd=2,lag.max=72, main="Autocorrelation Function")
+pacf(d12serie,ylim=c(-1,1),col=c(rep(1,11),2),lwd=2,lag.max=72, main="Partial Autocorrelation Function")
+par(mfrow=c(1,1))
+```
+Observing the plots we can identify at least two model for each component:
+
+For the regular part we can assume AR(3) or and ARMA(1,1). 
+\begin{itemize}
+\item AR(3): The ACF shows a exponential decreasing pattern, and the PACF has no significant lag after p=3. Following the parsimony principle the lag 6 has been not considered as true significant.
+\item ARMA(1,1): We consider a exponential decreasing pattern for both, ACF and PACF.
+\end{itemize}
+
+For the seasonal part we  can assume MA(1) or ARMA(1,1).
+\begin{itemize}
+\item MA(1): The PACF shows a exponential decreasing pattern, and the ACF has no significant lag after q=1.
+\item AR(2): The ACF shows a sinusoidal decreasing pattern, and the PACF has no significant lag after p=2. 
+
+\end{itemize}
+
+\newpage
+
+\section{Model estimation}
+
+In the previous section we have identified different models for the regular and seasonal part. From all, we are going to select only four combinations  to perform the estimation. Those models selected are the following:
+\begin{itemize}
+\item ARIMA$(3,0,0)(0,0,1)_{12}: X_t(1-\phi_1B-\phi_2B^2-\phi_3B^3) =Z_t (1+\Theta_{1}B^{12}) $
+\item ARIMA$(3,0,0)(2,0,0)_{12}: X_t(1-\phi_1B-\phi_2B^2-\phi_3B^3)(1-\Phi_1B^{12}-\Phi_2B^{24}) =Z_t $ 
+\item ARIMA$(1,0,1)(1,0,1)_{12}: X_t(1-\phi_1B) (1-\Phi_1B^{12}) =Z_t(1+\theta_{1}B) (1+\Theta_{1}B^{12}) $
+\item ARIMA$(3,0,0)(0,0,2)_{12}: X_t(1-\phi_1B-\phi_2B^2-\phi_3B^3) =Z_t (1+\Theta_{1}B^{12}+\Theta_2B^{24}) $ 
+\end {itemize}
+```{r, echo=FALSE, results='asis', message=FALSE}
+mod_1 = arima(d12serie, order = c(3, 0, 0), seasonal = list(order = c(0, 0, 1), period = 12))
+mod_2 = arima(d12serie, order = c(3, 0, 0), seasonal = list(order = c(2, 0, 0), period = 12))
+mod_3 = arima(d12serie, order = c(1, 0, 1), seasonal = list(order = c(1, 0, 1), period = 12))
+mod_4 = arima(d12serie, order = c(3, 0, 0), seasonal = list(order = c(0, 0, 2), period = 12))
+
+stargazer::stargazer(mod_1,mod_2,mod_3,mod_4, type="latex",title = "Results", align = TRUE,column.labels=c("ARIMA(3,0,0)(0,0,1)","ARIMA(3,0,0)(2,0,0)", "ARIMA(1,0,1)(1,0,1)","ARIMA(3,0,0)(0,0,2)"), header = FALSE, dep.var.caption = "ARIMA(3,0,0)(0,0,1)")
+```
+Table 2 displays the parameter estimates. We can observe that the intercept is significant for all the models. Moreover, almost all the coefficients are significant at a 95% confidence. Only the seasonal AR1 parameter for the ARIMA$(1,0,1)(1,0,1)_{12}$ and the seasonal MA2 parameter for the ARIMA$(3,0,0)(0,0,2)_{12}$, are non-significant. 
+In terms of AIC, the ARIMA$(3,0,0)(0,0,1)_{12}$ and the ARIMA$(3,0,0)(0,0,2)_{12}$ are the ones with the lowest value. 
+
+\newpage
+\section{Model Validation}
+In this section we are going to provide a residual analysis, check if all the assumptions hold, evaluate the model capability for prediction and select the best model to forecast. The evaluation will be done and presented for each model. 
+
+\subsection{ARIMA(3,0,0)(0,0,1)}
+\subsubsection{Residual Analysis}
+```{r, echo=FALSE}
+resid=mod_1$residuals
+s=frequency(get(mod_1$series))
+par(mfrow=c(1,3))
+qqnorm(resid)
+qqline(resid,col=2,lwd=2)
+
+acf(resid^2,ylim=c(-1,1),lag.max=60,col=c(2,rep(1,s-1)),lwd=1)
+pacf(resid^2,ylim=c(-1,1),lag.max=60,col=c(rep(1,s-1),2),lwd=1)
+par(mfrow=c(1,1))
+```
+
+```{r, fig.height=5,fig.width=5, echo=FALSE, fig.align='center'}
+tsdiag(mod_1,gof.lag=7*s, )
+```
+
+\begin {itemize}
+\item Normality of the residuals: Using a QQplot and the histogram of the residuals we should be able to see that the errors are normally distributed around 0. This is the case of Model 1, both the QQplot and the histogram show no deviation from a theoretical normal distribution, we only see some outliers in the right side of the distribution.
+  
+\item Homocedasticity of the residuals: For validation of the model the errors should have a constant variance. This can be checked by plotting the residuals in a timeline, both "Residuals" and "Square Root of Absolute Residuals" show a linear trend with no big oscillations.
+    
+\item Independence of the residuals: The third assumption we have to verify is that the errors are independent from each other, one of the ways to detect it is using the Ljung-Box statistic, that computes a hypothesis test for each error. Plotting the p-values of the statistic we should see that these value are over the significance line of 0.05, this is not entirely true in Model 1, where we see that from lag 23, independence is not followed. One possible solution would be to re-identify or add another parameter to the model.
+\end{itemize}
+
+\subsubsection{Causality and Invertibility}
+If we take a look to the invertibility and causality of the model, we need to compute the module of all roots which should be greater than 1: 
+\begin{itemize}
+\item Modul of AR Characteristic polynomial Roots:  1.107838 1.900311 1.900311. So the model is invertible. 
+
+\item Modul of MA Characteristic polynomial Roots:  1.019415 1.019415 1.019415 1.019415 1.019415 1.019415 1.019415 1.019415 1.019415 1.019415 1.019415 1.019415 . So the model is causal.
+
+\end{itemize}
+
+\subsubsection{Capability of prediction}
+A model will be suitable to make forecast if it satisfies the condition of stability. To evaluate stability, we are going to perform to model estimations, one with the full sample and the other one without the last 12 observations. Then, we will compare wheter the results are similar en sign, magnitud and significance and if so, it would mean that the model is stable and suitable for making predictions. 
+```{r, include=FALSE}
+########### Estabilitat Model (SENSE CONSTANT/Without constant!!!!) ###############
+ultim=c(2018,12)                       #Dic 2019
+
+serie1=window(d12serie,end=ultim+c(1,0))  #complete series: 1996-2019
+serie2=window(d12serie,end=ultim)         #series without last year obsrvations: 1996-2018
+
+#Fit the model to the complete series: lnserie1
+mod_1_1 = arima(serie1, order = c(3, 0, 0), seasonal = list(order = c(0, 0, 1), period = 12))
+#Fit the model to the subset series (without 2019 data): lnserie2
+mod_1_2 = arima(serie2, order = c(3, 0, 0), seasonal = list(order = c(0, 0, 1), period = 12))
+```
+
+```{r,echo=FALSE, results='asis', message=FALSE}
+stargazer::stargazer(mod_1_1, mod_1_2, type = "latex", header = FALSE, column.labels =c("Full Sample", "Shrinked Sample"),dep.var.labels.include = FALSE, title = "ARIMA(3,0,0)(0,0,1)", dep.var.caption = "" )
+```
+Clearly in this case the stability is fullfiled, this means that the correlation structure has not changed in the last year, and that the use of the complete series for making predictions is reliable.
+
+\subsection{ARIMA(3,0,0)(2,0,0)}
+\subsubsection{Residual Analysis}
+```{r, echo=FALSE}
+resid=mod_2$residuals
+s=frequency(get(mod_2$series))
+par(mfrow=c(1,3))
+qqnorm(resid)
+qqline(resid,col=2,lwd=2)
+
+acf(resid^2,ylim=c(-1,1),lag.max=60,col=c(2,rep(1,s-1)),lwd=1)
+pacf(resid^2,ylim=c(-1,1),lag.max=60,col=c(rep(1,s-1),2),lwd=1)
+par(mfrow=c(1,1))
+```
+
+```{r, fig.height=5,fig.width=5, echo=FALSE, fig.align='center'}
+tsdiag(mod_2,gof.lag=7*s, )
+```
+
+\begin{itemize}
+
+\item Normality of the residuals: Using a QQplot and the histogram of the residuals we should be able to see that the errors are normally distributed around 0. This is the case of Model 1, both the QQplot and the histogram show no deviation from a theoretical normal distribution, we only see some outliers in the right side of the distribution.
+  
+\item Homocedasticity of the residuals: For validation of the model the errors should have a constant variance. This can be checked by plotting the residuals in a timeline, both "Residuals" and "Square Root of Absolute Residuals" show a linear trend with no big oscillations.
+    
+\item Independence of the residuals: The third assumption we have to verify is that the errors are independent from each other, one of the ways to detect it is using the Ljung-Box statistic, that computes a hypothesis test for each error. Plotting the p-values of the statistic we should see that these value are over the significance line of 0.05, this is not entirely true in Model 2 again, the lags from lag 23 onwards are dependent.
+
+\end{itemize}
+
+\subsubsection{Causality and Invertibility}
+\begin {itemize}
+
+\item Modul of AR Characteristic polynomial Roots:  1.0404 1.0404 1.0404 1.0404 1.0404 1.0404 1.0404 1.0404 1.0404 1.0404 1.0404 1.0404 1.0404 1.0404 1.0404 1.0404 1.0404 1.0404 1.0404 1.0404 1.0404 1.0404 1.0404 1.150185 1.0404 1.724141 1.724141 . 
+\end{itemize}
+They are all greater than 1, so Model 2 is invertible and causal.
+
+\subsubsection{Capability of prediction}
+```{r,echo=FALSE, results='asis', message=FALSE}
+#Fit the model to the complete series: lnserie1
+mod_2_1 = arima(serie1, order = c(3, 0, 0), seasonal = list(order = c(2, 0, 0), period = 12))
+mod_2_2 = arima(serie2, order = c(3, 0, 0), seasonal = list(order = c(2, 0, 0), period = 12))
+stargazer::stargazer(mod_2_1, mod_2_2, type = "latex", header = FALSE, dep.var.caption = "",column.labels =c("Full Sample", "Shrinked Sample"),dep.var.labels.include = FALSE, title = "ARIMA(3,0,0)(2,0,0)" )
+```
+Clearly in this case the stability is fullfiled, this means that the correlation structure has not changed in the last year, and that the use of the complete series for making predictions is reliable.
+
+\subsection{ARIMA(1,0,1)(1,0,1)}
+\subsubsection{Residual Analysis}
+```{r, echo=FALSE}
+resid=mod_3$residuals
+s=frequency(get(mod_3$series))
+par(mfrow=c(1,3))
+qqnorm(resid)
+qqline(resid,col=2,lwd=2)
+
+acf(resid^2,ylim=c(-1,1),lag.max=60,col=c(2,rep(1,s-1)),lwd=1)
+pacf(resid^2,ylim=c(-1,1),lag.max=60,col=c(rep(1,s-1),2),lwd=1)
+par(mfrow=c(1,1))
+```
+
+```{r, fig.height=5,fig.width=5, echo=FALSE, fig.align='center'}
+tsdiag(mod_3,gof.lag=7*s, )
+```
+
+\begin{itemize}
+\item Normality of the residuals: Using a QQplot and the histogram of the residuals we should be able to see that the errors are normally distributed around 0. This is the case of Model 1, both the QQplot and the histogram show no deviation from a theoretical normal distribution, we only see some outliers in the right side of the distribution.
+  
+\item Homocedasticity of the residuals: For validation of the model the errors should have a constant variance. This can be checked by plotting the residuals in a timeline, both "Residuals" and "Square Root of Absolute Residuals" show a linear trend with no big oscillations.
+    
+\item Independence of the residuals: The third assumption we have to verify is that the errors are independent from each other, one of the ways to detect it is using the Ljung-Box statistic, that computes a hypothesis test for each error. Plotting the p-values of the statistic we should see that these value are over the significance line of 0.05, this is not true in Model 3 and we can conclude that the residuals are not independent.
+
+\end{itemize}
+
+\subsubsection{Causality and Invertibility}
+
+\subsubsection{Capability of prediction}
+
+```{r,echo=FALSE, results='asis', message=FALSE}
+#Fit the model to the complete series: lnserie1
+mod_3_1 = arima(serie1, order = c(1, 0, 1), seasonal = list(order = c(1, 0, 1), period = 12))
+#Fit the model to the subset series (without 2019 data): lnserie2
+mod_3_2 = arima(serie2, order = c(1, 0, 1), seasonal = list(order = c(1, 0, 1), period = 12))
+
+stargazer::stargazer(mod_3_1, mod_3_2, type = "latex", header = FALSE, dep.var.caption = "",column.labels =c("Full Sample", "Shrinked Sample"),dep.var.labels.include = FALSE, title = "ARIMA(1,0,1)(1,0,1)" )
+```
+Clearly in this case the stability is fullfiled, this means that the correlation structure has not changed in the last year, and that the use of the complete series for making predictions is reliable.
+
+\subsection{ARIMA(3,0,0)(0,0,2)}
+\subsubsection{Residual Analysis}
+
+```{r, echo=FALSE}
+resid=mod_4$residuals
+s=frequency(get(mod_4$series))
+par(mfrow=c(1,3))
+qqnorm(resid)
+qqline(resid,col=2,lwd=2)
+
+acf(resid^2,ylim=c(-1,1),lag.max=60,col=c(2,rep(1,s-1)),lwd=1)
+pacf(resid^2,ylim=c(-1,1),lag.max=60,col=c(rep(1,s-1),2),lwd=1)
+par(mfrow=c(1,1))
+```
+
+```{r, fig.height=5,fig.width=5, echo=FALSE, fig.align='center'}
+tsdiag(mod_4,gof.lag=7*s, )
+```
+\begin{itemize}
+
+\item Normality of the residuals: Using a QQplot and the histogram of the residuals we should be able to see that the errors are normally distributed around 0. This is the case of Model 1, both the QQplot and the histogram show no deviation from a theoretical normal distribution, we only see some outliers in the right side of the distribution.
+  
+\item Homocedasticity of the residuals: For validation of the model the errors should have a constant variance. This can be checked by plotting the residuals in a timeline, both "Residuals" and "Square Root of Absolute Residuals" show a linear trend with no big oscillations.
+    
+\item Independence of the residuals: The third assumption we have to verify is that the errors are independent from each other, one of the ways to detect it is using the Ljung-Box statistic, that computes a hypothesis test for each error. Plotting the p-values of the statistic we should see that these value are over the significance line of 0.05, this is true for Model 4, as we do not see dependence until lag 43.
+
+\end{itemize}
+
+\subsubsection{Causality and Invertibility}
+
+If we take a look to the invertibility and causality of the model, we need to compute the module of all roots, and should be all greater than 1:
+\begin{itemize}
+\item Modul of AR Characteristic polynomial Roots:  1.113293 1.934532 1.934532 
+
+\item Modul of MA Characteristic polynomial Roots:  1.014151 1.014151 1.014151 1.014151 1.014151 1.014151 1.014151 1.014151 1.191581 1.191581 1.014151 1.014151 1.014151 1.014151 1.191581 1.191581 1.191581 1.191581 1.191581 1.191581 1.191581 1.191581 1.191581 1.191581 
+\end{itemize}
+
+Since all roots are greater than 1, we can conclude that the model is invertible and causal. Thus, will be able to perform forecasting.
+
+\subsubsection{Capability of prediction}
+```{r,echo=FALSE, results='asis', message=FALSE}
+#Fit the model to the complete series: lnserie1
+mod_4_1 = arima(serie1, order = c(3, 0, 0), seasonal = list(order = c(0, 0, 2), period = 12))
+#Fit the model to the subset series (without 2019 data): lnserie2
+mod_4_2 = arima(serie2, order = c(3, 0, 0), seasonal = list(order = c(0, 0, 2), period = 12))
+
+stargazer::stargazer(mod_3_1, mod_3_2, type = "latex", header = FALSE, dep.var.caption = "",column.labels =c("Full Sample", "Shrinked Sample"),dep.var.labels.include = FALSE , title = "ARIMA(3,0,0)(0,0,2)" )
+```
+
+The stability property is clearly fulfilled implying that the correlation structure has not changes in the last year and the use of the stationary differentiated series is reliable for making predictions.
+
+\newpage
+\section{Forecasting}
+
+In this section we are going to provide a plot with the long term forecast for the next twelve months with the corresponding confidence bands. The model we selected to perform the forecast is the ARIMA$(3,0,0)(0,0,2)_{12}$
+
+```{r, echo=FALSE}
+pred=predict(mod_4_1,n.ahead=12)
+#predicted serie
+pr<-window(diffinv(pred$pred,12,xi=window(serie,start=ultim+c(0,1),end=ultim+c(1,0))),start=ultim+c(1,0))
+
+#se
+model<-mod_4_1$model
+varZ<-mod_4_1$sigma
+ma<-ARMAtoMA(ar=mod_4_1$phi,ma=mod_4_1$theta,lag.max=11)
+se<-c(0,sqrt((cumsum(c(1,ma))^2)*varZ))
+
+
+#Intervals
+tl1<-ts(pr-1.96*se,start=ultim+c(1,0),freq=12)
+tu1<-ts(pr+1.96*se,start=ultim+c(1,0),freq=12)
+pr1<-ts(pr,start=ultim+c(1,0),freq=12)
+
+#Plot
+pdq=c(3,0,0)
+PDQ=c(0,0,2)
+
+ts.plot(serie,tl1,tu1,pr1,lty=c(1,2,2,1),col=c(1,4,4,2),xlim=c(2016,2021),type="o",main="Long term forecasts",ylab="Monthly metro users")
+abline(v=2016:2021,lty=3,col=4)
+```
+
+\newpage
+\section{Outlier Treatment and Calendar Effects}
+In this section we are going to analyze whether the Calendar Effects are significant and ajust the possible utiliers that may appear. 
+\subsection{Calendar Effects}
+We try to detect and analyze the outliers for predicted events such as the Easter holidays or the proportion of trading days.
+
+Due to we are dealing with monthly data we want to verify if  either the variation of the number of labor days in a month or the calendar movement of the Easter week, affects the series.
+
+```{r,echo=FALSE, warning=FALSE}
+#Importation of Calendar effect function
+setwd("~/Desktop/2nQ/Time Series/Final Project")
+source("CalendarEffects.r")
+data=c(start(serie)[1],start(serie)[2], length(serie)) #starting year, month, series size
+```
+
+In this case due to the intercept is significant, we execute the calendar effect treatment on the original series, but when we consider the auxiliary varibles in order to get the linearised time series, this variables must be in the same difference applied on original serie.
+
+```{r, include=FALSE}
+wTradDays=Wtrad(data) #creates auxiliary variable for trading days configurations (5/2 the ideal proportion) 
+d12wTradDays=diff(wTradDays,12)
+```
+
+```{r, include=FALSE}
+wEast=Weaster(data)  
+#creates auxiliary variable for Easter configurations (half easter on March and other half on April: ideal distribution)
+d12wEast=diff(wEast,12)
+```
+Besides, we also have considered an intervention analysis. We want to study the effect of the creation of integrated tickets in 2001. The integrated tickets are also known as T-10, T-Mes, or T-Jove,  are a set of special tickets created by the government to promote the use of public transport. They allow the user to combine multiple modes of transport in one journey and use the same ticket multiple times.
+
+We also consider the effect of this policy in the series. It makes sense to wonder if these tickets produced an actual increase in the number of passengers.
+
+```{r, include=FALSE}
+Itickets=ts(rep(0,length(d12serie)),start=start(d12serie),freq=frequency(d12serie)) #Dummy variable for IA
+Itickets[61:length(d12serie)]=1  #The integrated ticket was implemented on January 1, 2001. (value =1 from this date onwards)
+```
+
+```{r, include=FALSE}
+model_fit=arima(d12serie,order=c(3,0,0),seasonal=list(order=c(0,0,2),period=12))
+
+mod1EC=arima(d12serie,order=c(3,0,0),seasonal=list(order=c(0,0,2),period=12),xreg=d12wTradDays)
+
+mod2EC=arima(d12serie,order=c(3,0,0),seasonal=list(order=c(0,0,2),period=12),xreg=d12wEast)
+
+mod3EC=arima(d12serie,order=c(3,0,0),seasonal=list(order=c(0,0,2),period=12),xreg=data.frame(d12wTradDays,d12wEast,Itickets))
+
+mod4EC=arima(d12serie,order=c(3,0,0),seasonal=list(order=c(0,0,2),period=12),xreg=data.frame(d12wTradDays,d12wEast))
+```
+
+```{r,echo=FALSE, results='asis', message=FALSE}
+stargazer::stargazer(model_fit,mod1EC, mod2EC, mod4EC,mod3EC, type = "latex", header = FALSE, dep.var.caption = "",column.labels =c("No CE", "Trading Days", "Easter Effect", "Easter-Trading Days", "Easter, IA"),dep.var.labels.include = FALSE , title = "Test of Calendar Effects" )
+```
+
+Looking the result displayed in table 7, we can assume that the best model is the one with the calendar effects but without the Intervention Analysis because it has the lowest AIC with all the parameters significant. Besides, we can conclude that the creation  of the integrated tickets didn't have any significant effect on the number of passengers.
+
+
+```{r, echo=FALSE}
+EfecTD=coef(mod4EC)["d12wTradDays"]*d12wTradDays   #trading days effect (CE)
+EfecwEast=coef(mod4EC)["d12wEast"]*d12wEast         #Easter holiday effect
+d12serieEC=d12serie-EfecTD-EfecwEast
+```
+
+
+
+\subsection{Outlier Detection}
+
+One the series has taken into account the calendar effects, it's time to check the presence of outliers. Table shows that only 2 outliers were found in the series: An additive outlier, whihc only affects on one period, and a Transitory Change, which affects on one period and its effect decreases in the next periods. knowing that, we are prepared to linearize our series taking into account the effects of the Calendar Effects and those two outliers.
+
+```{r, echo=FALSE}
+mod4EC=arima(d12serie,order=c(3,0,0),seasonal=list(order=c(0,0,2),period=12),xreg=data.frame(d12wTradDays,d12wEast))
+```
+
+
+```{r, echo=FALSE}
+setwd("")
+source("atipics2.r")
+mod4.atip=outdetec(mod4EC, dif = c(0,0), crit = 3,LS=T)
+
+atipics=mod4.atip$atip[order(mod4.atip$atip[,1]),]
+meses=c("Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic")
+
+outliers_detected<-data.frame(atipics,Fecha=paste(meses[(atipics[,1]-1)%%12+1],start(serie)[1]+((atipics[,1]-1)%/%12)),perc.Obs=atipics[,3])
+```
+
+\begin{table}[]
+\centering
+\begin{tabular}{l|l|l|l|l|l|l|}
+\cline{2-7}
+                        & Obs & Type\_detected & W\_coeff  & ABS\_L\_Ratio & Date     & Perc.Obs  \\ \hline
+\multicolumn{1}{|l|}{2} & 152 & AO             & 1664.357  & 3.515739      & Ago 2008 & 1664.357  \\ \hline
+\multicolumn{1}{|l|}{1} & 271 & TC             & -2679.472 & 3.451213      & Jul 2018 & -2679.472 \\ \hline
+\end{tabular}
+\caption{Outliers Detected}
+\label{tab:my-table}
+\end{table}
+
+```{r, include=FALSE}
+#Now, we linearize our serie:
+d12serie.lin=lineal(d12serie,mod4.atip$atip)
+```
+
+\subsection{Forecasting}
+
+Before carrying on with the forecasting, we need to check again the stability of the updated model. 
+
+```{r, include=FALSE}
+ultim=c(2018,12)
+
+length(wTradDays)
+
+d12serie.lin1=window(d12serie.lin,end=ultim+c(1,0))
+d12serie.lin2=window(d12serie.lin,end=ultim)
+d12wTradDays2=window(d12wTradDays,end=ultim)
+d12wEast2=window(d12wEast, end=ultim)
+```
+
+```{r, include=FALSE}
+modEC.lin=arima(d12serie.lin1,order=c(3,0,0),seasonal=list(order=c(0,0,2),period=12),xreg=data.frame(d12wTradDays,d12wEast))
+modEC.lin2=arima(d12serie.lin2,order=c(3,0,0),seasonal=list(order=c(0,0,2),period=12),xreg=data.frame(d12wTradDays2,d12wEast2))
+```
+
+
+```{r,echo=FALSE, results='asis', message=FALSE}
+stargazer::stargazer(modEC.lin, modEC.lin, type = "latex", header = FALSE, dep.var.caption = "",column.labels =c("Full Sample", "Shrinked Sample"),dep.var.labels.include = FALSE , title = "Stability Test" )
+```
+
+Table 9 shows that the model is still stable because the estimates between the Full sample and shrinked sample are very similar so we can proceed to do the forecasts.
+
+```{r, echo=FALSE}
+data3=c(ultim[1]+2, 1, 12)
+
+wTradDays3=Wtrad(data3)
+wEast3=Weaster(data3)
+pred=predict(modEC.lin,n.ahead=12, newxreg=data.frame(wTradDays3,wEast3))
+#predicted serie
+pr.lin<-window(diffinv(pred$pred,12,xi=window(serie,start=ultim+c(0,1),end=ultim+c(1,0))),start=ultim+c(1,0))
+se.lin<-ts(c(0,pred$se),start=ultim+c(1,0),freq=12)
+
+#Intervals
+tl1.lin<-ts(pr.lin-1.96*se.lin,start=ultim+c(1,0),freq=12)
+tu1.lin<-ts(pr.lin+1.96*se.lin,start=ultim+c(1,0),freq=12)
+pr1.lin<-ts(pr.lin,start=ultim+c(1,0),freq=12)
+
+#Plot
+pdq=c(3,0,0)
+PDQ=c(0,0,2)
+
+ts.plot(serie,tl1.lin,tu1.lin,pr1.lin,lty=c(1,2,2,1),col=c(1,4,4,2),xlim=c(2016,2021),type="o",main=paste("Model ARIMA(",paste(pdq,collapse=","),")(",paste(PDQ,collapse=","),")_12",sep=""))
+abline(v=2016:2021,lty=3,col=4)
+
+```
+
+In the plot above the red line indicated the estimated, forecasted, number of metro passengers for the next months, and in blue is the 95% confidence band. We can observe that the model still keeps the upward trend that exists from previous years and the seasinality with the drop in the month of August. Overall the forecasts seems to adjust really accurate with thin confidence bands, indicating good performance by the model.
+
+\newpage
+
+\section{Conclusions}
+
+We have been able throughout all the study to analyse the series of metro passangers, a dataset with more than 20 years of information and we have been able to do forecasting with it. It is paramount at this stage of the study to point out the complexity of real-life studies of this caliber, the amount of information that it is needed and the complexity of the models increases exponentially. However, as a first practical analysis with time series data we got to the results we set to accomplish in the beginning.
+   
+From a first descriptive analytics and with the use of informal tools, such as graphs and formal tools such as hypothesis testing we choose the best SARIMA model possible for the metro data. After careful analysis of the stationarity and making sure we would be able to make predictions, we have proceed with outlier and calendar effects treatment to better adjust the model. Once done, we have been able to proceed with the desired forecast for the next year.
+   
+All this process has been followed with strict focus on scientific and statistic results and we are proud of the outcome. The results can be used for planning purposes for the Public Sector when dealing with the metro schedule for the year 2020. Furthermore, the model could be reuses, after some regular checking, for the years to come and can be perfectioned with even more data. We are sure that the pandemic has truncated this model, making all of the forecast not usable in practice, although the model is still useful.
